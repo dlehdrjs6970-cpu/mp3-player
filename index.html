@@ -81,6 +81,28 @@
   #list li:hover .x{visibility:visible} #list li .x:hover{background:var(--line)}
   .list .none{color:var(--muted);font-size:13px;padding:6px}
 
+  .subs{margin-top:18px;padding:20px 24px}
+  .subs-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+  .subs-head b{font-size:16px}
+  .subs-btns{display:flex;gap:8px;flex-wrap:wrap}
+  .sbtn{font-size:13px;padding:7px 12px;border-radius:9px;border:1px solid var(--line);background:var(--card);cursor:pointer}
+  .sbtn:hover{background:var(--soft)}
+  .sbtn.primary{background:var(--accent);color:#fff;border-color:var(--accent)} .sbtn.primary:hover{background:var(--accent-h)}
+  .sbtn.ghost{color:var(--muted)}
+  .sbtn:disabled{opacity:.5;cursor:default}
+  .sub-status{font-size:13px;color:var(--muted);margin-top:10px;min-height:18px}
+  .sub-prog{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:6px}
+  .sub-prog div{height:100%;width:0;background:var(--accent);transition:width .3s}
+  .now-line{font-size:24px;line-height:1.45;font-weight:600;text-align:center;margin:16px 6px 14px;min-height:0}
+  .now-line:empty{display:none}
+  .lines{list-style:none;margin:0;padding:0;max-height:320px;overflow:auto;border-top:1px solid var(--line)}
+  .lines li{display:flex;gap:12px;padding:9px 8px;border-radius:8px;cursor:pointer;font-size:15px;line-height:1.5}
+  .lines li:hover{background:var(--soft)}
+  .lines li.on{background:var(--soft);color:var(--accent);font-weight:600}
+  .lines li .ts{color:var(--muted);font-size:12px;min-width:42px;padding-top:3px;font-variant-numeric:tabular-nums}
+  .lines li.on .ts{color:var(--accent)}
+  .sub-empty{font-size:13px;color:var(--muted);line-height:1.8;margin:12px 0 0}
+  #subFile{display:none}
   #dropOverlay{position:fixed;inset:0;background:rgba(47,91,234,.12);border:4px dashed var(--accent);display:none;
     align-items:center;justify-content:center;font-size:24px;font-weight:700;color:var(--accent);z-index:10;pointer-events:none}
   #dropOverlay.show{display:flex}
@@ -94,7 +116,7 @@
     <header>
       <h1>🎧 MP3 플레이어</h1>
       <label class="pick" for="file" title="파일 추가 (O)">＋ 파일 추가</label>
-      <input id="file" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.flac" multiple>
+      <input id="file" type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.flac,.srt,.vtt,.lrc,.txt" multiple>
     </header>
 
     <div class="card player">
@@ -154,8 +176,32 @@
           <span><kbd>←</kbd><kbd>→</kbd> 5초 이동</span>
           <span><kbd>↑</kbd><kbd>↓</kbd> 볼륨 · <kbd>M</kbd> 음소거</span>
           <span><kbd>[</kbd><kbd>]</kbd> 속도 · <kbd>P</kbd><kbd>N</kbd> 이전/다음</span>
+          <span><kbd>R</kbd> 지금 문장 다시</span>
+          <span><kbd>,</kbd><kbd>.</kbd> 이전/다음 문장</span>
         </div>
       </div>
+    </div>
+
+    <div class="card subs" id="subsCard" hidden>
+      <div class="subs-head">
+        <b>📝 자막</b>
+        <span class="subs-btns">
+          <button id="autoSub" class="sbtn primary" type="button">자동으로 만들기</button>
+          <label class="sbtn" for="subFile">대본 파일 열기</label>
+          <input id="subFile" type="file" accept=".srt,.vtt,.lrc,.txt">
+          <button id="saveSub" class="sbtn" type="button" hidden>.srt 저장</button>
+          <button id="clearSub" class="sbtn ghost" type="button" hidden>지우기</button>
+        </span>
+      </div>
+      <div id="subStatus" class="sub-status"></div>
+      <div id="subProg" class="sub-prog" hidden><div id="subProgFill"></div></div>
+      <div id="nowLine" class="now-line"></div>
+      <ol id="lines" class="lines"></ol>
+      <p id="subEmpty" class="sub-empty">
+        <b>자동으로 만들기</b>를 누르면 이 기기 안에서 AI가 소리를 듣고 영어 문장을 받아 적어요. (무료 · 파일이 밖으로 나가지 않아요)<br>
+        처음 한 번은 음성인식 모델(약 40~300MB)을 내려받느라 시간이 걸리고, 그다음부터는 바로 시작돼요.<br>
+        대본이 있다면 <b>대본 파일 열기</b>로 .srt · .vtt · .lrc · .txt 파일을 불러와도 돼요. MP3와 같은 이름의 대본을 함께 끌어다 놓으면 자동으로 연결돼요.
+      </p>
     </div>
   </section>
 
@@ -196,14 +242,25 @@
   }
 
   // ---------- 파일 ----------
-  function addFiles(files){
-    const list = [...files].filter(f => (f.type || '').startsWith('audio/') || /\.(mp3|m4a|wav|aac|ogg|flac)$/i.test(f.name));
-    if(!list.length){ toast('오디오 파일이 아니에요'); return; }
+  const baseName = n => n.replace(/\.[^.]+$/, '');
+  const isSubFile = f => /\.(srt|vtt|lrc|txt)$/i.test(f.name);
+  async function addFiles(files){
+    files = [...files];
+    const list = files.filter(f => !isSubFile(f) && ((f.type || '').startsWith('audio/') || /\.(mp3|m4a|wav|aac|ogg|flac)$/i.test(f.name)));
+    const subFiles = files.filter(isSubFile);
+    if(!list.length && !subFiles.length){ toast('오디오 파일이 아니에요'); return; }
     const first = tracks.length;
-    list.forEach(f => tracks.push({ name: f.name.replace(/\.[^.]+$/, ''), url: URL.createObjectURL(f) }));
+    list.forEach(f => tracks.push({ name: baseName(f.name), url: URL.createObjectURL(f), file: f,
+      key: 'sub:' + f.name + ':' + f.size, subs: null }));
+    // 같은 이름의 대본 파일은 그 MP3에 연결, 이름이 안 맞으면 지금 곡에 연결
+    for(const sf of subFiles){
+      const t = tracks.find(t => t.name.toLowerCase() === baseName(sf.name).toLowerCase()) || (idx >= 0 ? tracks[idx] : tracks[first]);
+      if(t){ const subs = parseSubs(await sf.text(), sf.name); if(subs.length){ t.subs = subs; saveSubs(t); } }
+    }
     renderList();
-    if(idx < 0) load(first, false);
-    toast(list.length + '개 추가됨');
+    if(idx < 0 && tracks.length) load(first < tracks.length ? first : 0, false);
+    else if(idx >= 0) showSubs();
+    toast(list.length ? list.length + '개 추가됨' : '대본을 불러왔어요');
   }
   $('file').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
   $('empty').addEventListener('click', () => $('file').click());
@@ -222,7 +279,7 @@
     $('title').textContent = tracks[i].name;
     $('sub').textContent = tracks.length > 1 ? (i + 1) + ' / ' + tracks.length : '';
     $('player').hidden = false; $('empty').hidden = true;
-    renderList(); setMediaSession();
+    renderList(); setMediaSession(); showSubs();
     if(autoplay) audio.play().catch(() => {});
     setIcon();
   }
@@ -245,7 +302,7 @@
   }
   function reset(){
     audio.pause(); audio.removeAttribute('src'); audio.load(); idx = -1;
-    $('player').hidden = true; $('empty').hidden = false; renderList(); setIcon();
+    $('player').hidden = true; $('empty').hidden = false; $('subsCard').hidden = true; renderList(); setIcon();
   }
   function remove(i){
     URL.revokeObjectURL(tracks[i].url); tracks.splice(i, 1);
@@ -277,7 +334,8 @@
   audio.addEventListener('play', () => { setIcon(); if(navigator.mediaSession) navigator.mediaSession.playbackState = 'playing'; });
   audio.addEventListener('pause', () => { setIcon(); if(navigator.mediaSession) navigator.mediaSession.playbackState = 'paused'; });
   audio.addEventListener('loadedmetadata', updateBar);
-  audio.addEventListener('timeupdate', () => { if(!dragging) updateBar(); });
+  audio.addEventListener('timeupdate', () => { if(!dragging) updateBar(); syncLine(); });
+  audio.addEventListener('seeked', syncLine);
   audio.addEventListener('ended', () => {
     if(afterMode === 'repeat'){ audio.currentTime = 0; audio.play(); }
     else if(afterMode === 'next' && idx < tracks.length - 1) load(idx + 1, true);
@@ -353,6 +411,8 @@
       case 'KeyN': if(idx < tracks.length - 1) load(idx + 1, !audio.paused); break;
       case 'KeyP': if(audio.currentTime > 3 || idx === 0) audio.currentTime = 0; else load(idx - 1, !audio.paused); break;
       case 'Home': audio.currentTime = 0; break;
+      case 'KeyR': replayLine(); break;
+      case 'Comma': case 'Period': jumpLine(c === 'Period' ? 1 : -1); break;
     }
   });
   document.addEventListener('keyup', e => { if(e.code === 'Space') e.preventDefault(); });
@@ -370,6 +430,255 @@
       navigator.mediaSession.setActionHandler('nexttrack', () => idx < tracks.length - 1 && load(idx + 1, true));
     }catch(e){}
   }
+
+  // =====================================================================
+  //  자막
+  // =====================================================================
+  let curLine = -1, busy = false;
+  const linesEl = $('lines');
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  // --- 대본 파일 읽기: SRT / VTT / LRC / TXT ---
+  function toSec(t){
+    const p = t.trim().replace(',', '.').split(':').map(Number);
+    return p.length === 3 ? p[0]*3600 + p[1]*60 + p[2] : p.length === 2 ? p[0]*60 + p[1] : p[0];
+  }
+  function parseSubs(text, name){
+    text = text.replace(/^﻿/, '').replace(/\r/g, '');
+    const out = [];
+    if(/\.lrc$/i.test(name) || /^\[\d+:\d+/m.test(text) && !/-->/.test(text)){
+      for(const line of text.split('\n')){
+        const tags = [...line.matchAll(/\[(\d+:\d+(?:[.:]\d+)?)\]/g)];
+        const body = line.replace(/\[[^\]]*\]/g, '').trim();
+        if(tags.length && body) tags.forEach(m => out.push({ s: toSec(m[1].replace(/:(\d+)$/, '.$1')), e: null, t: body }));
+      }
+    } else if(/-->/.test(text)){
+      for(const block of text.split(/\n\s*\n/)){
+        const m = block.match(/((?:\d+:)?\d+:\d+[.,]\d+)\s*-->\s*((?:\d+:)?\d+:\d+[.,]\d+)/);
+        if(!m) continue;
+        const body = block.slice(block.indexOf(m[0]) + m[0].length).split('\n').slice(1).join(' ')
+                       .replace(/<[^>]+>/g, '').replace(/\{[^}]+\}/g, '').trim();
+        if(body) out.push({ s: toSec(m[1]), e: toSec(m[2]), t: body });
+      }
+    } else {
+      // 시간 정보 없는 대본: 문장 단위로 나눠서 보여주기만
+      text.replace(/\s+/g, ' ').split(/(?<=[.!?])\s+(?=[A-Z"'“])/).map(s => s.trim()).filter(Boolean)
+        .forEach(t => out.push({ s: null, e: null, t }));
+    }
+    out.sort((a, b) => (a.s ?? 0) - (b.s ?? 0));
+    out.forEach((l, i) => { if(l.s !== null && l.e === null) l.e = out[i+1] && out[i+1].s !== null ? out[i+1].s : l.s + 6; });
+    return out;
+  }
+
+  function saveSubs(t){ if(t && t.key) store.set(t.key, t.subs); }
+  function cur(){ return idx >= 0 ? tracks[idx] : null; }
+
+  function showSubs(){
+    const t = cur(); $('subsCard').hidden = !t; if(!t) return;
+    if(!t.subs) t.subs = store.get(t.key, null);
+    const subs = t.subs || [];
+    curLine = -1; $('nowLine').textContent = '';
+    linesEl.innerHTML = subs.map((l, i) =>
+      '<li data-i="' + i + '">' + (l.s !== null ? '<span class="ts">' + fmt(l.s) + '</span>' : '') + '<span>' + esc(l.t) + '</span></li>').join('');
+    $('subEmpty').hidden = subs.length > 0;
+    $('saveSub').hidden = $('clearSub').hidden = !subs.length;
+    $('autoSub').textContent = subs.length ? '다시 만들기' : '자동으로 만들기';
+    if(!busy){ $('subStatus').textContent = subs.length ? subs.length + '문장 · 문장을 누르면 그 부분부터 들려줘요' : ''; }
+    $('autoSub').disabled = busy;
+    syncLine();
+  }
+  linesEl.addEventListener('click', e => {
+    const li = e.target.closest('li'); if(!li) return;
+    const l = cur().subs[+li.dataset.i];
+    if(l.s !== null){ audio.currentTime = l.s; if(audio.paused) audio.play().catch(() => {}); }
+  });
+
+  function lineAt(t){
+    const subs = cur() && cur().subs; if(!subs) return -1;
+    let found = -1;
+    for(let i = 0; i < subs.length; i++){ if(subs[i].s !== null && subs[i].s <= t + 0.05) found = i; else if(subs[i].s !== null) break; }
+    return found;
+  }
+  function syncLine(){
+    const subs = cur() && cur().subs; if(!subs || !subs.length) return;
+    const i = lineAt(audio.currentTime);
+    if(i === curLine) return;
+    curLine = i;
+    linesEl.querySelectorAll('li.on').forEach(li => li.classList.remove('on'));
+    $('nowLine').textContent = i >= 0 ? subs[i].t : '';
+    const li = linesEl.children[i];
+    if(li){
+      li.classList.add('on');
+      const top = li.offsetTop - linesEl.offsetTop - linesEl.clientHeight / 2 + li.clientHeight / 2;
+      linesEl.scrollTo({ top, behavior: 'smooth' });
+    }
+  }
+  function replayLine(){
+    const subs = cur() && cur().subs; const i = lineAt(audio.currentTime);
+    if(subs && i >= 0){ audio.currentTime = subs[i].s; toast('🔁 문장 다시'); if(audio.paused) audio.play().catch(() => {}); }
+    else skip(-3);
+  }
+  function jumpLine(d){
+    const subs = cur() && cur().subs; if(!subs || !subs.length || subs[0].s === null) return;
+    let i = lineAt(audio.currentTime);
+    if(d < 0 && i >= 0 && audio.currentTime - subs[i].s > 1.5) d = 0; // 문장 중간이면 그 문장 처음으로
+    i = Math.min(subs.length - 1, Math.max(0, i + d));
+    audio.currentTime = subs[i].s; syncLine();
+  }
+
+  $('subFile').addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = ''; const t = cur(); if(!f || !t) return;
+    const subs = parseSubs(await f.text(), f.name);
+    if(!subs.length){ toast('대본을 읽지 못했어요'); return; }
+    t.subs = subs; saveSubs(t); showSubs(); toast('대본을 불러왔어요');
+  });
+  $('clearSub').addEventListener('click', () => { const t = cur(); t.subs = null; store.set(t.key, null); try{ localStorage.removeItem(t.key); }catch(e){} showSubs(); });
+  $('saveSub').addEventListener('click', () => {
+    const t = cur(); if(!t || !t.subs) return;
+    const ts = s => { s = Math.max(0, s || 0); const ms = Math.round(s * 1000);
+      const p = n => String(n).padStart(2, '0');
+      return p(Math.floor(ms/3600000)) + ':' + p(Math.floor(ms/60000)%60) + ':' + p(Math.floor(ms/1000)%60) + ',' + String(ms%1000).padStart(3,'0'); };
+    const srt = t.subs.map((l, i) => (i+1) + '\n' + ts(l.s) + ' --> ' + ts(l.e) + '\n' + l.t + '\n').join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([srt], { type: 'text/plain' })); a.download = t.name + '.srt';
+    document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  // --- 자동 받아쓰기 (Whisper, 브라우저 안에서 실행) ---
+  const WORKER_SRC = `
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2';
+    env.allowLocalModels = false;
+    let asr = null, loadedKey = '';
+    async function getASR(model, device, dtype){
+      const key = model + device;
+      if(asr && loadedKey === key) return asr;
+      asr = await pipeline('automatic-speech-recognition', model, {
+        device, dtype,
+        progress_callback: p => {
+          if(p.status === 'progress_total') postMessage({ type: 'dl', progress: p.progress });
+          else if(p.status === 'progress' && p.total) postMessage({ type: 'dlfile', file: p.file, loaded: p.loaded, total: p.total });
+        }
+      });
+      loadedKey = key; return asr;
+    }
+    onmessage = async ({ data }) => {
+      const { audio, segments, plans } = data;
+      let lastErr = null;
+      for(const plan of plans){
+        try{
+          const t = await getASR(plan.model, plan.device, plan.dtype);
+          postMessage({ type: 'ready', device: plan.device });
+          for(let i = 0; i < segments.length; i++){
+            const [a, b] = segments[i];
+            const out = await t(audio.subarray(Math.floor(a * 16000), Math.floor(b * 16000)), { return_timestamps: true });
+            const chunks = (out.chunks || []).map(c => ({
+              s: a + (c.timestamp[0] ?? 0), e: a + (c.timestamp[1] ?? (b - a)), t: (c.text || '').trim() }));
+            postMessage({ type: 'seg', i, n: segments.length, chunks, text: out.text });
+          }
+          postMessage({ type: 'done' }); return;
+        }catch(err){ lastErr = err; asr = null; postMessage({ type: 'fallback', message: String(err && err.message || err) }); }
+      }
+      postMessage({ type: 'error', message: String(lastErr && lastErr.message || lastErr) });
+    };`;
+  let worker = null;
+
+  async function decode16k(file){
+    const buf = await file.arrayBuffer();
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    const decoded = await new Promise((res, rej) => { const p = ctx.decodeAudioData(buf, res, rej); if(p && p.then) p.then(res, rej); });
+    ctx.close && ctx.close();
+    const len = Math.ceil(decoded.duration * 16000);
+    const off = new OfflineAudioContext(1, len, 16000);
+    const src = off.createBufferSource(); src.buffer = decoded; src.connect(off.destination); src.start();
+    const rendered = await off.startRendering();
+    return rendered.getChannelData(0);
+  }
+  // 30초 안쪽에서 가장 조용한 지점으로 끊어서 단어가 잘리지 않게
+  function makeSegments(a){
+    const SR = 16000, dur = a.length / SR, segs = [];
+    let start = 0;
+    while(start < dur - 0.3){
+      let end = Math.min(dur, start + 29.5);
+      if(end < dur){
+        let best = end, bestE = Infinity;
+        for(let t = start + 18; t < end; t += 0.05){
+          let e = 0; const i0 = Math.floor(t * SR), i1 = i0 + SR * 0.05;
+          for(let i = i0; i < i1; i += 4) e += a[i] * a[i];
+          if(e < bestE){ bestE = e; best = t + 0.025; }
+        }
+        end = best;
+      }
+      segs.push([start, end]); start = end;
+    }
+    return segs;
+  }
+  const isTouchDevice = /iPad|iPhone|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  function plans(){
+    const p = [];
+    if(navigator.gpu && !isTouchDevice) p.push({ model: 'Xenova/whisper-base.en', device: 'webgpu', dtype: 'fp32' });
+    if(isTouchDevice) p.push({ model: 'Xenova/whisper-tiny.en', device: 'wasm', dtype: 'q8' });
+    else p.push({ model: 'Xenova/whisper-base.en', device: 'wasm', dtype: 'q8' });
+    return p;
+  }
+  function setProg(p){ $('subProg').hidden = p === null; if(p !== null) $('subProgFill').style.width = Math.round(p * 100) + '%'; }
+
+  $('autoSub').addEventListener('click', async () => {
+    const t = cur(); if(!t || busy) return;
+    if(!t.file){ toast('파일을 다시 추가해 주세요'); return; }
+    busy = true; $('autoSub').disabled = true;
+    const st = $('subStatus');
+    const startedFor = t;
+    try{
+      st.textContent = '소리 파일 읽는 중…'; setProg(0);
+      const a = await decode16k(t.file);
+      const segments = makeSegments(a);
+      if(!worker) worker = new Worker(URL.createObjectURL(new Blob([WORKER_SRC], { type: 'text/javascript' })), { type: 'module' });
+      startedFor.subs = []; showSubs(); $('subEmpty').hidden = true;
+      st.textContent = '음성인식 준비 중…'; $('autoSub').disabled = true;
+      const t0 = Date.now(); let files = {};
+      await new Promise((resolve, reject) => {
+        worker.onmessage = ({ data: m }) => {
+          if(m.type === 'dl'){ st.textContent = '음성인식 모델 내려받는 중… ' + Math.round(m.progress) + '% (처음 한 번만)'; setProg(m.progress / 100); }
+          else if(m.type === 'dlfile'){
+            files[m.file] = [m.loaded, m.total];
+            const L = Object.values(files).reduce((s, v) => s + v[0], 0), T = Object.values(files).reduce((s, v) => s + v[1], 0);
+            st.textContent = '음성인식 모델 내려받는 중… ' + Math.round(L / 1048576) + ' / ' + Math.round(T / 1048576) + 'MB (처음 한 번만)'; setProg(L / T);
+          }
+          else if(m.type === 'ready'){ st.textContent = '받아 적는 중… 0%'; setProg(0); }
+          else if(m.type === 'fallback'){ st.textContent = '다른 방식으로 다시 시도하는 중…'; startedFor.subs = []; }
+          else if(m.type === 'seg'){
+            m.chunks.filter(c => c.t && !/^\[.*\]$|^\(.*\)$/.test(c.t)).forEach(c => startedFor.subs.push(c));
+            const p = (m.i + 1) / m.n, el = (Date.now() - t0) / 1000;
+            const left = Math.max(0, Math.round(el / p - el));
+            st.textContent = '받아 적는 중… ' + Math.round(p * 100) + '%' + (m.i > 0 ? ' · 약 ' + (left >= 60 ? Math.round(left/60) + '분' : left + '초') + ' 남음' : '');
+            setProg(p);
+            if(cur() === startedFor) showSubsKeepStatus();
+          }
+          else if(m.type === 'done') resolve();
+          else if(m.type === 'error') reject(new Error(m.message));
+        };
+        worker.onerror = e => { e.preventDefault && e.preventDefault(); worker.terminate(); worker = null;
+          reject(new Error('음성인식 프로그램을 불러오지 못했어요')); };
+        const copy = a.slice();
+        worker.postMessage({ audio: copy, segments, plans: plans() }, [copy.buffer]);
+      });
+      saveSubs(startedFor);
+      st.textContent = '';
+      toast('자막 완성!');
+    }catch(err){
+      console.error(err);
+      st.textContent = '자막을 만들지 못했어요: ' + (err && err.message || err) + ' — 인터넷 연결을 확인하고 다시 눌러 보세요.';
+      if(startedFor.subs && !startedFor.subs.length) startedFor.subs = null;
+    }finally{
+      busy = false; setProg(null);
+      const msg = $('subStatus').textContent;
+      if(cur() === startedFor) showSubs();
+      if(msg) $('subStatus').textContent = msg;
+      $('autoSub').disabled = false;
+    }
+  });
+  function showSubsKeepStatus(){ const s = $('subStatus').textContent; showSubs(); $('subStatus').textContent = s; $('autoSub').disabled = true; }
 
   // 저장된 설정 복원
   setRate(store.get('rate', 1));
