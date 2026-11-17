@@ -200,7 +200,7 @@
           <span><kbd>Space</kbd> 재생 / 일시정지</span>
           <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 10·5·3초 전</span>
           <span><kbd>8</kbd><kbd>9</kbd><kbd>0</kbd> 3·5·10초 후</span>
-          <span><kbd>←</kbd><kbd>→</kbd> 5초 이동</span>
+          <span><kbd>←</kbd><kbd>→</kbd> 3초 이동</span>
           <span><kbd>↑</kbd><kbd>↓</kbd> 볼륨 · <kbd>M</kbd> 음소거</span>
           <span><kbd>[</kbd><kbd>]</kbd> 속도 · <kbd>P</kbd><kbd>N</kbd> 이전/다음</span>
           <span><kbd>R</kbd> 지금 문장 다시</span>
@@ -611,7 +611,7 @@
 
   // ---------- 키보드 ----------
   const SKIPS = { Digit1:-10, Digit2:-5, Digit3:-3, Digit8:3, Digit9:5, Digit0:10,
-                  Numpad1:-10, Numpad2:-5, Numpad3:-3, Numpad8:3, Numpad9:5, Numpad0:10, ArrowLeft:-5, ArrowRight:5 };
+                  Numpad1:-10, Numpad2:-5, Numpad3:-3, Numpad8:3, Numpad9:5, Numpad0:10, ArrowLeft:-3, ArrowRight:3 };
   document.addEventListener('keydown', e => {
     if(e.metaKey || e.ctrlKey || e.altKey) return;
     const c = e.code;
