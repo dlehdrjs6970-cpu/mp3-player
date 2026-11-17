@@ -77,10 +77,37 @@
   #list li.cur{background:var(--soft);color:var(--accent);font-weight:600}
   #list li .no{width:22px;text-align:right;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
   #list li .nm{flex:1;word-break:break-all}
-  #list li .x{color:var(--muted);visibility:hidden;padding:2px 6px;border-radius:6px}
+  #list li .x{color:var(--muted);visibility:hidden;font-size:12px;padding:2px 6px;border-radius:6px}
   #list li:hover .x{visibility:visible} #list li .x:hover{background:var(--line)}
   .list .none{color:var(--muted);font-size:13px;padding:6px}
 
+  .lib-head{display:flex;justify-content:space-between;align-items:center;margin:2px 6px 10px}
+  .lib-head b{font-size:15px}
+  #newFolder{font-size:13px;color:var(--accent);font-weight:600;padding:5px 8px;border-radius:8px}
+  #newFolder:hover{background:var(--soft)}
+  #folders{list-style:none;margin:0 0 12px;padding:0 0 12px;border-bottom:1px solid var(--line)}
+  #folders li{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;cursor:pointer;font-size:14px}
+  #folders li:hover{background:var(--soft)}
+  #folders li.on{background:var(--soft);color:var(--accent);font-weight:600}
+  #folders li.drop{outline:2px dashed var(--accent);background:var(--soft)}
+  #folders .fn{flex:1;word-break:break-all}
+  #folders .fc{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  #folders .fx{color:var(--muted);font-size:12px;padding:2px 5px;border-radius:6px;visibility:hidden}
+  #folders li:hover .fx{visibility:visible} #folders .fx:hover{background:var(--line);color:var(--ink)}
+  .list-head{display:flex;justify-content:space-between;align-items:center;margin:0 6px 8px;font-size:13px;color:var(--muted)}
+  .list-head b{color:var(--ink);font-size:14px}
+  .seg.small button{padding:4px 9px;font-size:12px}
+  #list li .tag{font-size:11px;color:var(--muted);background:var(--bg);border-radius:5px;padding:1px 6px;white-space:nowrap}
+  #list li .mv{visibility:hidden;font-size:13px;padding:2px 5px;border-radius:6px}
+  #list li:hover .mv{visibility:visible} #list li .mv:hover{background:var(--line)}
+  @media (hover:none){ #list li .mv, #list li .x, #folders .fx{visibility:visible} }
+  .lib-note{font-size:11px;color:var(--muted);margin:10px 6px 2px;line-height:1.5}
+  #moveMenu{position:absolute;display:none;z-index:20;background:var(--card);border:1px solid var(--line);border-radius:12px;
+    box-shadow:0 8px 24px rgba(0,0,0,.15);padding:6px;min-width:200px;max-height:320px;overflow:auto}
+  #moveMenu .mh{font-size:12px;color:var(--muted);padding:6px 10px}
+  #moveMenu button{display:block;width:100%;text-align:left;padding:8px 10px;border-radius:8px;font-size:14px}
+  #moveMenu button:hover{background:var(--soft)}
+  #moveMenu button.new{color:var(--accent);border-top:1px solid var(--line);border-radius:0 0 8px 8px;margin-top:4px}
   .subs{margin-top:18px;padding:20px 24px}
   .subs-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
   .subs-head b{font-size:16px}
@@ -207,12 +234,19 @@
 
   <aside>
     <div class="card list">
-      <h2><span>재생 목록 <span id="count"></span></span><button id="clearAll" type="button">모두 지우기</button></h2>
+      <div class="lib-head"><b>보관함</b><button id="newFolder" type="button">＋ 새 폴더</button></div>
+      <ul id="folders"></ul>
+      <div class="list-head">
+        <span><b id="viewName">전체</b> <span id="count"></span></span>
+        <span class="seg small" id="sort"><button data-s="name">이름순</button><button data-s="added">추가순</button></span>
+      </div>
       <ul id="list"></ul>
+      <p id="libNote" class="lib-note">넣은 파일과 폴더는 이 브라우저에 저장돼서 다음에 열어도 그대로 있어요.</p>
     </div>
   </aside>
 </div>
 
+<div id="moveMenu"></div>
 <div id="dropOverlay">여기에 놓으면 재생 목록에 추가돼요</div>
 <audio id="audio" preload="metadata"></audio>
 
@@ -223,7 +257,7 @@
   const ICON_PLAY  = '<svg viewBox="0 0 24 24"><path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l11-6.86a1 1 0 0 0 0-1.7l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>';
   const ICON_PAUSE = '<svg viewBox="0 0 24 24"><rect x="6" y="4.5" width="4" height="15" rx="1.2"/><rect x="14" y="4.5" width="4" height="15" rx="1.2"/></svg>';
   const RATES = [0.75, 0.9, 1, 1.25, 1.5];
-  let tracks = [], idx = -1, afterMode = 'next', showRemain = false, dragging = false, toastTimer, lastVol = 1;
+  let queue = [], idx = -1, afterMode = 'next', showRemain = false, dragging = false, toastTimer, lastVol = 1;
 
   const store = {
     get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }catch(e){ return d; } },
@@ -238,79 +272,264 @@
   function flash(el){ if(!el) return; el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 110); }
   function setIcon(){
     playBtn.innerHTML = audio.paused ? ICON_PLAY : ICON_PAUSE;
-    document.title = idx < 0 ? 'MP3 플레이어' : (audio.paused ? '⏸ ' : '▶ ') + tracks[idx].name;
+    document.title = !playing ? 'MP3 플레이어' : (audio.paused ? '⏸ ' : '▶ ') + playing.name;
   }
 
-  // ---------- 파일 ----------
+  // =====================================================================
+  //  보관함: 폴더 + 파일을 브라우저(IndexedDB)에 저장해서 다음에 열어도 그대로
+  // =====================================================================
+  const DB = {
+    db: null,
+    open(){
+      if(this.db) return Promise.resolve(this.db);
+      return new Promise((res, rej) => {
+        const r = indexedDB.open('mp3player', 1);
+        r.onupgradeneeded = () => {
+          const d = r.result;
+          if(!d.objectStoreNames.contains('items')) d.createObjectStore('items', { keyPath: 'id' });
+          if(!d.objectStoreNames.contains('folders')) d.createObjectStore('folders', { keyPath: 'id' });
+        };
+        r.onsuccess = () => { this.db = r.result; res(this.db); };
+        r.onerror = () => rej(r.error);
+      });
+    },
+    async tx(store, mode, fn){
+      const d = await this.open();
+      return new Promise((res, rej) => {
+        const t = d.transaction(store, mode), st = t.objectStore(store);
+        const out = fn(st);
+        t.oncomplete = () => res(out && out.result !== undefined ? out.result : undefined);
+        t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+      });
+    },
+    all(store){ return this.tx(store, 'readonly', st => st.getAll()); },
+    put(store, obj){ return this.tx(store, 'readwrite', st => st.put(obj)); },
+    del(store, id){ return this.tx(store, 'readwrite', st => st.delete(id)); }
+  };
+  let lib = [], folders = [], view = store.get('view', 'all'), sortMode = store.get('sort', 'name'), dbOK = true;
+  let playing = null, playingUrl = null;
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const baseName = n => n.replace(/\.[^.]+$/, '');
   const isSubFile = f => /\.(srt|vtt|lrc|txt)$/i.test(f.name);
+  const isAudio = f => !isSubFile(f) && ((f.type || '').startsWith('audio/') || /\.(mp3|m4a|wav|aac|ogg|flac)$/i.test(f.name));
+  const natural = (a, b) => a.localeCompare(b, 'ko', { numeric: true, sensitivity: 'base' });
+  const folderName = id => id === 'all' ? '전체' : id === '' ? '분류 안 됨' : ((folders.find(f => f.id === id) || {}).name || '?');
+  // DB에 저장할 때 화면용 정보(subs)는 빼고 저장
+  const saveItem = it => dbOK && DB.put('items', { id: it.id, name: it.name, fname: it.fname, folder: it.folder, added: it.added, file: it.file }).catch(() => {});
+
+  function viewItems(v = view){
+    const list = lib.filter(it => v === 'all' || it.folder === v);
+    return sortMode === 'name' ? list.sort((a, b) => natural(a.name, b.name)) : list.sort((a, b) => a.added - b.added);
+  }
+
   async function addFiles(files){
     files = [...files];
-    const list = files.filter(f => !isSubFile(f) && ((f.type || '').startsWith('audio/') || /\.(mp3|m4a|wav|aac|ogg|flac)$/i.test(f.name)));
-    const subFiles = files.filter(isSubFile);
-    if(!list.length && !subFiles.length){ toast('오디오 파일이 아니에요'); return; }
-    const first = tracks.length;
-    list.forEach(f => tracks.push({ name: baseName(f.name), url: URL.createObjectURL(f), file: f,
-      key: 'sub:' + f.name + ':' + f.size, subs: null }));
-    // 같은 이름의 대본 파일은 그 MP3에 연결, 이름이 안 맞으면 지금 곡에 연결
+    const audios = files.filter(isAudio), subFiles = files.filter(isSubFile);
+    if(!audios.length && !subFiles.length){ toast('오디오 파일이 아니에요'); return; }
+    const target = view === 'all' ? '' : view;
+    let added = 0, dup = 0; const now = Date.now();
+    audios.sort((a, b) => natural(a.name, b.name)).forEach((f, i) => {
+      if(lib.some(it => it.fname === f.name && it.file.size === f.size && it.folder === target)){ dup++; return; }
+      const it = { id: uid(), name: baseName(f.name), fname: f.name, folder: target, added: now + i, file: f,
+                   key: 'sub:' + f.name + ':' + f.size, subs: null };
+      lib.push(it); saveItem(it); added++;
+    });
     for(const sf of subFiles){
-      const t = tracks.find(t => t.name.toLowerCase() === baseName(sf.name).toLowerCase()) || (idx >= 0 ? tracks[idx] : tracks[first]);
+      const t = lib.find(t => t.name.toLowerCase() === baseName(sf.name).toLowerCase()) || playing;
       if(t){ const subs = parseSubs(await sf.text(), sf.name); if(subs.length){ t.subs = subs; saveSubs(t); } }
     }
-    renderList();
-    if(idx < 0 && tracks.length) load(first < tracks.length ? first : 0, false);
-    else if(idx >= 0) showSubs();
-    toast(list.length ? list.length + '개 추가됨' : '대본을 불러왔어요');
+    renderLib();
+    if(!playing && viewItems().length) load(0, false, viewItems());
+    else if(playing){ rebuildQueue(); showSubs(); }
+    toast(added ? added + '개 추가됨' + (target ? ' → 📁 ' + folderName(target) : '') + (dup ? ' (중복 ' + dup + '개 제외)' : '')
+               : dup ? '이미 있는 파일이에요' : '대본을 불러왔어요');
   }
   $('file').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
   $('empty').addEventListener('click', () => $('file').click());
 
+  // 바깥에서 파일을 끌어올 때만 큰 안내 표시 (목록 안에서 옮길 때는 X)
   let dragDepth = 0;
-  document.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; $('dropOverlay').classList.add('show'); });
-  document.addEventListener('dragover', e => e.preventDefault());
-  document.addEventListener('dragleave', e => { e.preventDefault(); if(--dragDepth <= 0){ dragDepth = 0; $('dropOverlay').classList.remove('show'); } });
-  document.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('dropOverlay').classList.remove('show'); addFiles(e.dataTransfer.files); });
+  const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  document.addEventListener('dragenter', e => { if(!hasFiles(e)) return; e.preventDefault(); dragDepth++; $('dropOverlay').classList.add('show'); });
+  document.addEventListener('dragover', e => { if(hasFiles(e)) e.preventDefault(); });
+  document.addEventListener('dragleave', e => { if(!hasFiles(e)) return; if(--dragDepth <= 0){ dragDepth = 0; $('dropOverlay').classList.remove('show'); } });
+  document.addEventListener('drop', e => { if(!hasFiles(e)) return; e.preventDefault(); dragDepth = 0; $('dropOverlay').classList.remove('show'); addFiles(e.dataTransfer.files); });
 
-  function load(i, autoplay){
-    if(i < 0 || i >= tracks.length) return;
-    idx = i;
-    audio.src = tracks[i].url;
+  // ---------- 재생 대기열 ----------
+  function rebuildQueue(){
+    if(!playing){ queue = []; idx = -1; return; }
+    queue = viewItems(store.get('qview', 'all'));
+    if(!queue.includes(playing)) queue = viewItems('all');
+    idx = queue.indexOf(playing);
+  }
+  // list를 주면 그 목록을 재생 대기열로 (예: 지금 보고 있는 폴더)
+  function load(i, autoplay, list){
+    if(list){ queue = list; store.set('qview', view); }
+    if(i < 0 || i >= queue.length) return;
+    idx = i; playing = queue[i];
+    if(playingUrl) URL.revokeObjectURL(playingUrl);
+    playingUrl = URL.createObjectURL(playing.file);
+    audio.src = playingUrl;
     audio.playbackRate = currentRate();
-    $('title').textContent = tracks[i].name;
-    $('sub').textContent = tracks.length > 1 ? (i + 1) + ' / ' + tracks.length : '';
+    $('title').textContent = playing.name;
     $('player').hidden = false; $('empty').hidden = true;
-    renderList(); setMediaSession(); showSubs();
+    updateSub(); renderLib(); setMediaSession(); showSubs();
+    store.set('last', playing.id);
     if(autoplay) audio.play().catch(() => {});
     setIcon();
   }
-
-  function renderList(){
-    const ul = $('list'); ul.innerHTML = '';
-    $('count').textContent = tracks.length ? '(' + tracks.length + ')' : '';
-    if(!tracks.length){ ul.innerHTML = '<li class="none">아직 파일이 없어요.</li>'; return; }
-    tracks.forEach((t, i) => {
-      const li = document.createElement('li'); if(i === idx) li.className = 'cur';
-      li.title = '클릭해서 재생';
-      const no = document.createElement('span'); no.className = 'no'; no.textContent = i === idx ? '▶' : i + 1;
-      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = t.name;
-      const x = document.createElement('button'); x.className = 'x'; x.textContent = '✕'; x.title = '목록에서 빼기';
-      x.onclick = e => { e.stopPropagation(); remove(i); };
-      li.onclick = () => load(i, true);
-      li.append(no, nm, x); ul.appendChild(li);
-    });
-    if(tracks.length > 1) $('sub').textContent = (idx + 1) + ' / ' + tracks.length;
+  function updateSub(){
+    $('sub').textContent = playing ? '📁 ' + folderName(playing.folder) + (queue.length > 1 ? ' · ' + (idx + 1) + ' / ' + queue.length : '') : '';
   }
   function reset(){
-    audio.pause(); audio.removeAttribute('src'); audio.load(); idx = -1;
-    $('player').hidden = true; $('empty').hidden = false; $('subsCard').hidden = true; renderList(); setIcon();
+    audio.pause(); audio.removeAttribute('src'); audio.load(); idx = -1; playing = null; queue = [];
+    if(playingUrl){ URL.revokeObjectURL(playingUrl); playingUrl = null; }
+    $('player').hidden = true; $('empty').hidden = false; $('subsCard').hidden = true; renderLib(); setIcon();
   }
-  function remove(i){
-    URL.revokeObjectURL(tracks[i].url); tracks.splice(i, 1);
-    if(!tracks.length) return reset();
-    if(i === idx) load(Math.min(i, tracks.length - 1), false);
-    else { if(i < idx) idx--; renderList(); }
+
+  // ---------- 보관함 그리기 ----------
+  function renderLib(){
+    // 폴더 목록
+    const fl = $('folders'); fl.innerHTML = '';
+    const count = id => id === 'all' ? lib.length : lib.filter(it => it.folder === id).length;
+    const rows = [{ id: 'all', icon: '🎵' }, { id: '', icon: '📥' }]
+      .concat(folders.slice().sort((a, b) => natural(a.name, b.name)).map(f => ({ id: f.id, icon: '📁', custom: true })));
+    rows.forEach(r => {
+      if(r.id === '' && !count('') && folders.length) return;   // 분류 안 된 게 없으면 숨김
+      const li = document.createElement('li');
+      li.className = (view === r.id ? 'on' : '') + (r.custom ? ' custom' : '');
+      li.innerHTML = '<span class="fi">' + r.icon + '</span><span class="fn"></span><span class="fc">' + count(r.id) + '</span>';
+      li.querySelector('.fn').textContent = folderName(r.id);
+      if(r.custom){
+        const ed = document.createElement('button'); ed.className = 'fx'; ed.textContent = '✎'; ed.title = '이름 바꾸기';
+        ed.onclick = e => { e.stopPropagation(); renameFolder(r.id); };
+        const dl = document.createElement('button'); dl.className = 'fx'; dl.textContent = '✕'; dl.title = '폴더 삭제 (파일은 남아요)';
+        dl.onclick = e => { e.stopPropagation(); deleteFolder(r.id); };
+        li.append(ed, dl);
+      }
+      li.onclick = () => { view = r.id; store.set('view', view); renderLib(); };
+      if(r.id !== 'all'){
+        li.addEventListener('dragover', e => { if(dragItem){ e.preventDefault(); li.classList.add('drop'); } });
+        li.addEventListener('dragleave', () => li.classList.remove('drop'));
+        li.addEventListener('drop', e => { e.preventDefault(); li.classList.remove('drop'); if(dragItem) moveItem(dragItem, r.id); });
+      }
+      fl.appendChild(li);
+    });
+
+    // 파일 목록
+    const items = viewItems(), ul = $('list'); ul.innerHTML = '';
+    $('viewName').textContent = folderName(view);
+    $('count').textContent = items.length ? items.length + '개' : '';
+    if(!items.length){
+      ul.innerHTML = '<li class="none">' + (lib.length ? '이 폴더는 비어 있어요.<br>파일을 여기로 끌어다 놓거나 다른 폴더에서 옮겨 오세요.'
+        : '아직 파일이 없어요.<br>폴더를 만들고 MP3를 넣어 보세요.') + '</li>';
+    }
+    items.forEach((t, i) => {
+      const li = document.createElement('li'); if(t === playing) li.className = 'cur';
+      li.draggable = true; li.title = '클릭: 재생 · 끌어서 왼쪽 폴더에 놓으면 이동';
+      li.innerHTML = '<span class="no"></span><span class="nm"></span>' +
+        (view === 'all' && t.folder ? '<span class="tag"></span>' : '') +
+        '<button class="mv" title="폴더 옮기기">📁</button><button class="x" title="보관함에서 삭제">✕</button>';
+      li.querySelector('.no').textContent = t === playing ? '▶' : i + 1;
+      li.querySelector('.nm').textContent = t.name;
+      if(li.querySelector('.tag')) li.querySelector('.tag').textContent = folderName(t.folder);
+      li.querySelector('.x').onclick = e => { e.stopPropagation(); removeItem(t); };
+      li.querySelector('.mv').onclick = e => { e.stopPropagation(); openMoveMenu(t, e.currentTarget); };
+      li.onclick = () => load(i, true, viewItems());
+      li.addEventListener('dragstart', e => { dragItem = t; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.id); });
+      li.addEventListener('dragend', () => { dragItem = null; });
+      ul.appendChild(li);
+    });
+    document.querySelectorAll('#sort button').forEach(b => b.classList.toggle('on', b.dataset.s === sortMode));
+    updateSub();
   }
-  $('clearAll').addEventListener('click', () => { tracks.forEach(t => URL.revokeObjectURL(t.url)); tracks = []; reset(); });
+  let dragItem = null;
+
+  // ---------- 폴더 / 파일 관리 ----------
+  $('newFolder').addEventListener('click', async () => {
+    const name = (prompt('새 폴더 이름', '') || '').trim(); if(!name) return;
+    const f = { id: uid(), name }; folders.push(f);
+    if(dbOK) await DB.put('folders', f).catch(() => {});
+    view = f.id; store.set('view', view); renderLib(); toast('📁 ' + name + ' 만들었어요');
+  });
+  async function renameFolder(id){
+    const f = folders.find(f => f.id === id); if(!f) return;
+    const name = (prompt('폴더 이름 바꾸기', f.name) || '').trim(); if(!name) return;
+    f.name = name; if(dbOK) await DB.put('folders', f).catch(() => {}); renderLib();
+  }
+  async function deleteFolder(id){
+    const f = folders.find(f => f.id === id); if(!f) return;
+    const n = lib.filter(it => it.folder === id).length;
+    if(!confirm('"' + f.name + '" 폴더를 삭제할까요?' + (n ? '\n안에 있던 파일 ' + n + '개는 "분류 안 됨"으로 옮겨져요.' : ''))) return;
+    lib.filter(it => it.folder === id).forEach(it => { it.folder = ''; saveItem(it); });
+    folders = folders.filter(x => x.id !== id);
+    if(dbOK) await DB.del('folders', id).catch(() => {});
+    if(view === id){ view = 'all'; store.set('view', view); }
+    rebuildQueue(); renderLib();
+  }
+  function moveItem(it, folderId){
+    if(it.folder === folderId) return;
+    it.folder = folderId; saveItem(it);
+    rebuildQueue(); renderLib(); toast(it.name + ' → ' + (folderId ? '📁 ' + folderName(folderId) : '분류 안 됨'));
+  }
+  async function removeItem(it){
+    if(!confirm('"' + it.name + '"을(를) 보관함에서 삭제할까요?')) return;
+    lib = lib.filter(x => x !== it);
+    if(dbOK) await DB.del('items', it.id).catch(() => {});
+    if(it === playing){
+      const q = queue.filter(x => x !== it);
+      if(q.length){ queue = q; load(Math.min(idx, q.length - 1), false, q); } else reset();
+    } else { rebuildQueue(); renderLib(); }
+  }
+
+  // 폴더 옮기기 메뉴 (아이패드처럼 끌기가 불편한 곳용)
+  const menu = $('moveMenu');
+  function openMoveMenu(it, btn){
+    const opts = [{ id: '', name: '분류 안 됨' }].concat(folders.slice().sort((a, b) => natural(a.name, b.name)));
+    menu.innerHTML = '<div class="mh">어디로 옮길까요?</div>';
+    opts.forEach(o => {
+      const b = document.createElement('button');
+      b.textContent = (o.id ? '📁 ' : '📥 ') + o.name + (it.folder === o.id ? '  ✓' : '');
+      b.onclick = () => { closeMenu(); moveItem(it, o.id); };
+      menu.appendChild(b);
+    });
+    const nb = document.createElement('button'); nb.className = 'new'; nb.textContent = '＋ 새 폴더 만들어서 옮기기';
+    nb.onclick = async () => {
+      closeMenu();
+      const name = (prompt('새 폴더 이름', '') || '').trim(); if(!name) return;
+      const f = { id: uid(), name }; folders.push(f); if(dbOK) await DB.put('folders', f).catch(() => {});
+      moveItem(it, f.id);
+    };
+    menu.appendChild(nb);
+    const r = btn.getBoundingClientRect();
+    menu.style.display = 'block';
+    menu.style.top = Math.min(window.innerHeight - menu.offsetHeight - 10, r.bottom + 4) + window.scrollY + 'px';
+    menu.style.left = Math.max(10, r.right - menu.offsetWidth) + window.scrollX + 'px';
+  }
+  function closeMenu(){ menu.style.display = 'none'; }
+  document.addEventListener('click', e => { if(!e.target.closest('#moveMenu, .mv')) closeMenu(); });
+
+  document.querySelectorAll('#sort button').forEach(b => b.addEventListener('click', () => {
+    sortMode = b.dataset.s; store.set('sort', sortMode); rebuildQueue(); renderLib();
+  }));
+
+  // 시작할 때 저장된 보관함 불러오기
+  async function initLib(){
+    try{
+      const [items, fs] = await Promise.all([DB.all('items'), DB.all('folders')]);
+      folders = fs || [];
+      lib = (items || []).map(it => Object.assign(it, { key: 'sub:' + it.fname + ':' + it.file.size, subs: null }));
+      if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    }catch(e){
+      dbOK = false; console.warn('보관함 저장 불가', e);
+      $('libNote').textContent = '⚠️ 이 브라우저에서는 보관함을 저장할 수 없어서, 창을 닫으면 목록이 사라져요.';
+    }
+    if(view !== 'all' && view !== '' && !folders.some(f => f.id === view)) view = 'all';
+    renderLib();
+    const last = lib.find(it => it.id === store.get('last', ''));
+    if(last){ const q0 = viewItems(store.get('qview', 'all')), q = q0.includes(last) ? q0 : viewItems('all');
+      queue = q; idx = q.indexOf(last); load(idx, false); }
+  }
 
   // ---------- 재생 ----------
   function toggle(){
@@ -338,7 +557,7 @@
   audio.addEventListener('seeked', syncLine);
   audio.addEventListener('ended', () => {
     if(afterMode === 'repeat'){ audio.currentTime = 0; audio.play(); }
-    else if(afterMode === 'next' && idx < tracks.length - 1) load(idx + 1, true);
+    else if(afterMode === 'next' && idx < queue.length - 1) load(idx + 1, true);
     else setIcon();
   });
 
@@ -408,7 +627,7 @@
         const i = RATES.indexOf(currentRate()) + (c === 'BracketRight' ? 1 : -1);
         if(i >= 0 && i < RATES.length){ setRate(RATES[i]); toast('속도 ' + RATES[i] + 'x'); }
         break; }
-      case 'KeyN': if(idx < tracks.length - 1) load(idx + 1, !audio.paused); break;
+      case 'KeyN': if(idx < queue.length - 1) load(idx + 1, !audio.paused); break;
       case 'KeyP': if(audio.currentTime > 3 || idx === 0) audio.currentTime = 0; else load(idx - 1, !audio.paused); break;
       case 'Home': audio.currentTime = 0; break;
       case 'KeyR': replayLine(); break;
@@ -421,13 +640,13 @@
   function setMediaSession(){
     if(!('mediaSession' in navigator) || idx < 0) return;
     try{
-      navigator.mediaSession.metadata = new MediaMetadata({ title: tracks[idx].name, artist: 'MP3 플레이어' });
+      navigator.mediaSession.metadata = new MediaMetadata({ title: playing.name, artist: 'MP3 플레이어' });
       navigator.mediaSession.setActionHandler('play', () => audio.play());
       navigator.mediaSession.setActionHandler('pause', () => audio.pause());
       navigator.mediaSession.setActionHandler('seekbackward', d => skip(-(d && d.seekOffset || 5)));
       navigator.mediaSession.setActionHandler('seekforward', d => skip(d && d.seekOffset || 5));
       navigator.mediaSession.setActionHandler('previoustrack', () => idx > 0 ? load(idx - 1, true) : (audio.currentTime = 0));
-      navigator.mediaSession.setActionHandler('nexttrack', () => idx < tracks.length - 1 && load(idx + 1, true));
+      navigator.mediaSession.setActionHandler('nexttrack', () => idx < queue.length - 1 && load(idx + 1, true));
     }catch(e){}
   }
 
@@ -471,7 +690,7 @@
   }
 
   function saveSubs(t){ if(t && t.key) store.set(t.key, t.subs); }
-  function cur(){ return idx >= 0 ? tracks[idx] : null; }
+  function cur(){ return playing; }
 
   function showSubs(){
     const t = cur(); $('subsCard').hidden = !t; if(!t) return;
@@ -685,7 +904,7 @@
   const am = store.get('after', 'next');
   document.querySelector('#after [data-m="' + am + '"]')?.click();
   setVol(store.get('vol', 1));
-  renderList(); setIcon();
+  setIcon(); initLib();
 })();
 </script>
 </body>
